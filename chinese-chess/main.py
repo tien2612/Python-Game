@@ -11,7 +11,6 @@ ROW_SIZE = 9  # Replace with the number of rows in your board image
 COL_SIZE = 8  # Replace with the number of columns in your board image
 
 class Piece:
-    # Other piece methods here
     def __init__(self, screen_width, screen_height):
         # Load the board image
         board = Image.open("images/ziga/board.png")
@@ -45,6 +44,9 @@ class Piece:
         # Bind the <Button-1> event to the canvas
         self.piece_grid = [[None for _ in range(COL_SIZE + 1)] for _ in range(ROW_SIZE + 1)]  # Create the grid
 
+        self.selected_piece = None
+
+        self.previous_select = []
         self.canvas.bind("<Button-1>", self.handle_square_click)
 
     def init_chess_man(self):
@@ -88,7 +90,7 @@ class Piece:
         img_oos = Image.open("images/ziga/oos.png")
         img_oos = img_oos.resize((50, 50), Image.LANCZOS)
         img_dotMove = Image.open("images/ziga/dotmove.png")
-        img_dotMove = img_dotMove.resize((50, 50), Image.LANCZOS)
+        img_dotMove = img_dotMove.resize((25, 25), Image.LANCZOS)
 
         self.image_map = {
             'rRook': ImageTk.PhotoImage(img_rRook),
@@ -163,42 +165,17 @@ class Piece:
 
         x = col * cell_width + 41
         y = row * cell_height + 57
-        self.canvas.create_image(x, y, image=self.image_map[piece_type], anchor='center')
+        image_id = self.canvas.create_image(x, y, image=self.image_map[piece_type], anchor='center')
 
         # Store the type of piece in the grid
-        print(row, col)
-        self.piece_grid[row][col] = piece_type
-    
+        self.piece_grid[row][col] = piece_type, image_id
+
     def make_move(self, piece_type, col, row):
-        move = 
-    
+        move = None
         return move
-    def can_move_to(self, piece_type, board, x, y):
-        """Check if the piece can move to the given coordinates."""
-        # If the target square is occupied by a piece of the same color, return False
-        if board[x][y] is not None:
-            return False
-
-        # For rook, check if there is a clear path to the target square
-        if piece_type == 'Rook':
-            if self.x == x:  # Moving horizontally
-                for i in range(min(self.y, y) + 1, max(self.y, y)):
-                    if board[self.x][i] is not None:
-                        return False
-            elif self.y == y:  # Moving vertically
-                for i in range(min(self.x, x) + 1, max(self.x, x)):
-                    if board[i][self.y] is not None:
-                        return False
-            else:
-                # Rooks can only move in straight lines
-                return False
-        # Handle other piece types here
-        else:
-            raise ValueError(f"Unknown piece type: {self.type}")
-
-        return True
-
+    
     def handle_square_click(self, event):
+        # Calculate the row and column of the clicked cell 
         cell_width = 64
         cell_height = 64
 
@@ -206,27 +183,66 @@ class Piece:
         row = round((event.y - 57) / cell_height)
         col = round((event.x - 41) / cell_width)
 
-        piece_type = self.piece_grid[row][col]
+        self.selected_piece, imageId = self.piece_grid[row][col]
+        self.dotMove_coordinate = []
+        if self.selected_piece is None:
+            # If no piece is selected, try to select the piece at this square
 
-        if piece_type is None:
-            print("No piece at this position")
+            if self.selected_piece is None:
+                print("No piece at this position")
+            else:
+                print(f'Piece at {row},{col} is {self.selected_piece}')
+                self.dotMove_coordinate = self.can_move_to(self.selected_piece, row, col)
+                self.selected_piece = None  # Reset selected piece
+
+        elif(self.selected_piece != None):
+            self.dotMove_coordinate = self.can_move_to(self.selected_piece, row, col)
         else:
-            print(f'Piece at {row},{col} is {piece_type}')
+            # If a piece is selected, try to move it to this square
+            if self.move_piece(self.selected_piece, row, col):
+                print(f'Piece moved to {row},{col}')
+            # self.remove_piece(coordinate)
+            self.selected_piece = None  # Reset selected piece
+
+    def can_move_to(self, piece_type, row, col):
+        """Display and return the coordinates that piece can move to."""
+        can_move_coordinate = []
         
-        if (piece_type == 'rHook' or piece_type == 'bHook'):
+        if piece_type == 'bRook' or piece_type == 'rRook':
+            # Rooks can move any number of squares along the row or column
+            # Check each direction (up, down, left, right)
+            for dr, dc in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
+                for i in range(1, max(ROW_SIZE + 1, COL_SIZE + 1)):
+                    new_row, new_col = row + dr * i, col + dc * i
+                    # Stop if the rook moved off the board
+                    if not (0 <= new_row < ROW_SIZE + 1 and 0 <= new_col < COL_SIZE + 1):
+                        break
+                    # Stop if the rook hits a piece
+                    if self.piece_grid[new_row][new_col] is not None:
+                        break
+                    can_move_coordinate.append((new_row, new_col))
+                    self.place_piece('dotMove', new_row, new_col)
+        # Handle other piece types here
+        else:
+            raise ValueError(f"Unknown piece type: {piece_type}")
+
+        return can_move_coordinate
+
+    def move_piece(self, selected_piece, row, col, old_coordinate):
+        self.place_piece(selected_piece, row, col)
+
+        self.remove_piece(selected_piece, old_coordinate)
+        self.remove_piece(selected_piece, self.dotMove_coordinate)
+    
+    def remove_piece(self, coordinate):
+        for row, col in coordinate:
+            piece_type, image_id = self.piece_grid[row][col]
+
+            self.canvas.delete(image_id)
+            self.piece_grid[row][col] = None, None
+            self.dotMove_coordinate = None
             pass
-        elif (piece_type == 'rHorse' or piece_type == 'bHorse'):
-            pass
-        elif (piece_type == 'rElephant' or piece_type == 'bElephant'):
-            pass
-        elif (piece_type == 'rAdvisor' or piece_type == 'bAdvisor'):
-            pass
-        elif (piece_type == 'rKing' or piece_type == 'bKing'):
-            pass
-        elif (piece_type == 'rCannon' or piece_type == 'bCannon'):
-            pass
-        elif (piece_type == 'rPawn' or piece_type == 'bPawn'):
-              pass
+
 class App:
     def __init__(self, root):
         self.root = root
@@ -234,7 +250,7 @@ class App:
 
         screen_width = self.root.winfo_screenwidth()
         screen_height = self.root.winfo_screenheight()
-
+                
         board = Piece(screen_width, screen_height)
 
         board.init_chess_man()
