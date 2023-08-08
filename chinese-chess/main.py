@@ -10,6 +10,15 @@ import customtkinter as ctk
 ROW_SIZE = 9  # Replace with the number of rows in your board image
 COL_SIZE = 8  # Replace with the number of columns in your board image
 
+WAIT_FOR_CLICK = 10
+MAKE_DECISION = 11
+MAKE_MOVE = 12
+
+class Player:
+    def __init__(self):
+        self.king_alive = True
+        self.king_checkmate = False
+        
 class Piece:
     def __init__(self, screen_width, screen_height):
         # Load the board image
@@ -42,11 +51,17 @@ class Piece:
         self.canvas.create_image(0, 0, image=self.board_image, anchor='nw')
 
         # Bind the <Button-1> event to the canvas
-        self.piece_grid = [[None for _ in range(COL_SIZE + 1)] for _ in range(ROW_SIZE + 1)]  # Create the grid
+        self.piece_grid = [[ (None, None) for _ in range(COL_SIZE + 1)] for _ in range(ROW_SIZE + 1)]  # Create the grid
+        self.dotMove_grid = [[ (None, None) for _ in range(COL_SIZE + 1)] for _ in range(ROW_SIZE + 1)]  # Create the grid
 
         self.selected_piece = None
 
         self.previous_select = []
+
+        self.dotMove_coordinate = []
+
+        self.status = MAKE_DECISION
+
         self.canvas.bind("<Button-1>", self.handle_square_click)
 
     def init_chess_man(self):
@@ -168,12 +183,11 @@ class Piece:
         image_id = self.canvas.create_image(x, y, image=self.image_map[piece_type], anchor='center')
 
         # Store the type of piece in the grid
-        self.piece_grid[row][col] = piece_type, image_id
+        if (piece_type == 'dotMove'):
+            self.dotMove_grid[row][col] = piece_type, image_id
+        else: 
+            self.piece_grid[row][col] = piece_type, image_id
 
-    def make_move(self, piece_type, col, row):
-        move = None
-        return move
-    
     def handle_square_click(self, event):
         # Calculate the row and column of the clicked cell 
         cell_width = 64
@@ -183,65 +197,178 @@ class Piece:
         row = round((event.y - 57) / cell_height)
         col = round((event.x - 41) / cell_width)
 
-        self.selected_piece, imageId = self.piece_grid[row][col]
-        self.dotMove_coordinate = []
-        if self.selected_piece is None:
-            # If no piece is selected, try to select the piece at this square
+        while (True):
 
-            if self.selected_piece is None:
-                print("No piece at this position")
-            else:
-                print(f'Piece at {row},{col} is {self.selected_piece}')
+            self.selected_piece, _ = self.piece_grid[row][col]
+            
+            if self.status == MAKE_DECISION:
+                print(f'Piece at {row},{col} selected')
+
+                self.remove_dotMove(self.dotMove_coordinate)            
+
                 self.dotMove_coordinate = self.can_move_to(self.selected_piece, row, col)
-                self.selected_piece = None  # Reset selected piece
+                
+                self.previous_select = [self.selected_piece, {(row, col)}]
 
-        elif(self.selected_piece != None):
-            self.dotMove_coordinate = self.can_move_to(self.selected_piece, row, col)
-        else:
-            # If a piece is selected, try to move it to this square
-            if self.move_piece(self.selected_piece, row, col):
-                print(f'Piece moved to {row},{col}')
-            # self.remove_piece(coordinate)
-            self.selected_piece = None  # Reset selected piece
+                self.status = MAKE_MOVE
+
+                break
+            elif self.status == MAKE_MOVE:
+                # check and move piece
+                if (row, col) in self.dotMove_coordinate:
+                    print(f'Piece move to {row},{col}')
+                    self.move_piece(self.previous_select[0], row, col, self.previous_select[1])
+                    break
+                else:
+                    self.status = MAKE_DECISION
+                    continue
+            else:
+                print("Something is wrong!")
+                break
 
     def can_move_to(self, piece_type, row, col):
         """Display and return the coordinates that piece can move to."""
         can_move_coordinate = []
         
-        if piece_type == 'bRook' or piece_type == 'rRook':
+        if piece_type in ['bRook', 'rRook']:
             # Rooks can move any number of squares along the row or column
             # Check each direction (up, down, left, right)
             for dr, dc in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
                 for i in range(1, max(ROW_SIZE + 1, COL_SIZE + 1)):
                     new_row, new_col = row + dr * i, col + dc * i
+
                     # Stop if the rook moved off the board
                     if not (0 <= new_row < ROW_SIZE + 1 and 0 <= new_col < COL_SIZE + 1):
                         break
                     # Stop if the rook hits a piece
-                    if self.piece_grid[new_row][new_col] is not None:
+                    piece, _ = self.piece_grid[new_row][new_col]
+
+                    if piece is not None:  # add this check
+                        if piece[0] != piece_type[0]:  # Check if the piece is not the same color
+                            can_move_coordinate.append((new_row, new_col))
+                            self.place_piece('dotMove', new_row, new_col)
                         break
+                    else:
+                        can_move_coordinate.append((new_row, new_col))
+                        self.place_piece('dotMove', new_row, new_col)
+        elif piece_type in ['bHorse', 'rHorse']:
+            # Horses can only move L direction, jump through 2 squares
+            for dr, dc in [(1, -2), (2, -1), (2, 1), (-1, 2), (-2, 1), (1, 2), (-2, -1), (-1, -2)]:
+                new_row, new_col = row + dr, col + dc
+
+                # Stop if the horse moved off the board
+                if not (0 <= new_row < ROW_SIZE + 1 and 0 <= new_col < COL_SIZE + 1):
+                    continue
+                
+                # Stop if the horse jumps over a piece
+                jump_row, jump_col = row + round(dr / 2), col + round(dc / 2)
+                
+                if self.piece_grid[jump_row][jump_col][0] is not None:
+                    continue
+                
+                # # If the destination square is empty or contains an enemy piece, the horse can move/attack there
+                piece, _ = self.piece_grid[new_row][new_col]
+
+                if piece is None or piece[0] != piece_type[0]:
                     can_move_coordinate.append((new_row, new_col))
                     self.place_piece('dotMove', new_row, new_col)
-        # Handle other piece types here
+
+        elif piece_type in ['bElephant', 'rElephant']:
+            # Elephant can only move X direction, jump through 2 squares
+            for dr, dc in [(-2, -2), (-2, 2), (2, 2), (2, -2)]:
+                new_row, new_col = row + dr, col + dc
+
+                river_boundary = 4
+
+                # Stop if the elephant moved off the board and cannot across the river
+                if not (0 <= new_row < ROW_SIZE + 1 and 0 <= new_col < COL_SIZE + 1):
+                    continue
+                     
+                if (piece_type[0] == 'r' and new_row > river_boundary) or \
+                    (piece_type[0] == 'b' and new_row <= river_boundary):
+                    continue
+
+                # Stop if the elephant move over a piece 
+                jump_row, jump_col = row + round(dr / 2), col + round(dc / 2)
+                
+                if self.piece_grid[jump_row][jump_col][0] is not None:
+                    continue
+                
+                # If the destination square is empty or contains an enemy piece, the horse can move/attack there
+                piece, _ = self.piece_grid[new_row][new_col]
+
+                if piece is None or piece[0] != piece_type[0]:
+                    can_move_coordinate.append((new_row, new_col))
+                    self.place_piece('dotMove', new_row, new_col)
+
+        elif piece_type in ['bAdvisor', 'rAdvisor']:
+            # Elephant can only move X direction, jump through 1 squares and in its boundry
+            for dr, dc in [(-1, -1), (-1, 1), (1, 1), (1, -1)]:
+                new_row, new_col = row + dr, col + dc
+
+                boundaries = {
+                    "col": [3, 5],
+                    "row": {('black', 'red'): [(7, 9), (0, 2)]}
+                }
+
+                # Stop if the advisor moved off the board and cannot beyond its boundary
+                if not (0 <= new_row < ROW_SIZE + 1 and 0 <= new_col < COL_SIZE + 1):
+                    continue
+                     
+                black_boundary, red_boundary = boundaries["row"][('black', 'red')]
+
+                # Check boundaries for red advisor
+                if piece_type == 'rAdvisor':
+                    if not ( (red_boundary[0] <= new_row <= red_boundary[1]) and\
+                        (boundaries['col'][0] <= new_col <= boundaries['col'][1]) ):
+                        continue
+
+                # Check boundaries for black advisor
+                elif piece_type == 'bAdvisor':
+                    if not ( (black_boundary[0] <= new_row <= black_boundary[1]) and\
+                        (boundaries['col'][0] <= new_col <= boundaries['col'][1]) ):
+                        continue
+         
+                # If the destination square is empty or contains an enemy piece, the horse can move/attack there
+                piece, _ = self.piece_grid[new_row][new_col]
+
+                if piece is None or piece[0] != piece_type[0]:
+                    can_move_coordinate.append((new_row, new_col))
+                    self.place_piece('dotMove', new_row, new_col)
+
         else:
             raise ValueError(f"Unknown piece type: {piece_type}")
 
         return can_move_coordinate
 
     def move_piece(self, selected_piece, row, col, old_coordinate):
+        # If the piece is exist piece, then terminate this peice before place new peice
+        if (self.piece_grid[row][col] != (None, None)):
+            self.remove_piece({(row, col)})
+        # First, place the new piece
         self.place_piece(selected_piece, row, col)
+        # Then, remove the old piece
+        self.remove_piece(old_coordinate)
 
-        self.remove_piece(selected_piece, old_coordinate)
-        self.remove_piece(selected_piece, self.dotMove_coordinate)
-    
-    def remove_piece(self, coordinate):
-        for row, col in coordinate:
-            piece_type, image_id = self.piece_grid[row][col]
+        self.remove_dotMove(self.dotMove_coordinate)
+            
+    def remove_dotMove(self, coordinate):   
 
-            self.canvas.delete(image_id)
-            self.piece_grid[row][col] = None, None
-            self.dotMove_coordinate = None
-            pass
+        if coordinate is not None:
+            for row, col in coordinate:
+                _, image_id = self.dotMove_grid[row][col]
+                if image_id is not None:  # Make sure you don't try to delete a non-existing image
+                    self.canvas.delete(image_id)
+                    self.dotMove_grid[row][col] = (None, None)
+                self.dotMove_coordinate = []
+
+    def remove_piece(self, coordinate):        
+        if coordinate is not None:
+            for row, col in coordinate:
+                _, image_id = self.piece_grid[row][col]
+                if image_id is not None:  # Make sure you don't try to delete a non-existing image
+                    self.canvas.delete(image_id)
+                    self.piece_grid[row][col] = (None, None)
 
 class App:
     def __init__(self, root):
