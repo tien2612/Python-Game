@@ -251,6 +251,7 @@ class Piece:
                     else:
                         can_move_coordinate.append((new_row, new_col))
                         self.place_piece('dotMove', new_row, new_col)
+
         elif piece_type in ['bHorse', 'rHorse']:
             # Horses can only move L direction, jump through 2 squares
             for dr, dc in [(1, -2), (2, -1), (2, 1), (-1, 2), (-2, 1), (1, 2), (-2, -1), (-1, -2)]:
@@ -302,7 +303,7 @@ class Piece:
                     self.place_piece('dotMove', new_row, new_col)
 
         elif piece_type in ['bAdvisor', 'rAdvisor']:
-            # Elephant can only move X direction, jump through 1 squares and in its boundry
+            # Advisor can only move X direction, jump through 1 squares and in its boundry
             for dr, dc in [(-1, -1), (-1, 1), (1, 1), (1, -1)]:
                 new_row, new_col = row + dr, col + dc
 
@@ -318,13 +319,13 @@ class Piece:
                 black_boundary, red_boundary = boundaries["row"][('black', 'red')]
 
                 # Check boundaries for red advisor
-                if piece_type == 'rAdvisor':
+                if piece_type[0] == 'r':
                     if not ( (red_boundary[0] <= new_row <= red_boundary[1]) and\
                         (boundaries['col'][0] <= new_col <= boundaries['col'][1]) ):
                         continue
 
                 # Check boundaries for black advisor
-                elif piece_type == 'bAdvisor':
+                elif piece_type[0] == 'b':
                     if not ( (black_boundary[0] <= new_row <= black_boundary[1]) and\
                         (boundaries['col'][0] <= new_col <= boundaries['col'][1]) ):
                         continue
@@ -335,6 +336,62 @@ class Piece:
                 if piece is None or piece[0] != piece_type[0]:
                     can_move_coordinate.append((new_row, new_col))
                     self.place_piece('dotMove', new_row, new_col)
+
+        elif piece_type in ['bKing', 'rKing']:
+            # King can only move 1 direction, through 1 squares and in its boundry
+            for dr, dc in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
+                new_row, new_col = row + dr, col + dc
+
+                boundaries = {
+                    "col": [3, 5],
+                    "row": {('black', 'red'): [(7, 9), (0, 2)]}
+                }
+
+                # Stop if the advisor moved off the board and cannot beyond its boundary
+                if not (0 <= new_row < ROW_SIZE + 1 and 0 <= new_col < COL_SIZE + 1):
+                    continue
+                     
+                black_boundary, red_boundary = boundaries["row"][('black', 'red')]
+
+                # Check boundaries for red advisor
+                if piece_type[0] == 'r':
+                    if not ( (red_boundary[0] <= new_row <= red_boundary[1]) and\
+                        (boundaries['col'][0] <= new_col <= boundaries['col'][1]) ):
+                        continue
+
+                # Check boundaries for black advisor
+                elif piece_type[0] == 'b':
+                    if not ( (black_boundary[0] <= new_row <= black_boundary[1]) and\
+                        (boundaries['col'][0] <= new_col <= boundaries['col'][1]) ):
+                        continue
+         
+                # If the destination square is empty or contains an enemy piece, the horse can move/attack there
+                piece, _ = self.piece_grid[new_row][new_col]
+
+                if piece is None or piece[0] != piece_type[0]:
+                    can_move_coordinate.append((new_row, new_col))
+                    self.place_piece('dotMove', new_row, new_col)
+
+        if piece_type in ['bCannon', 'rCannon']:
+            # Cannon can move any number of squares along the row or column but only attack through one piece (jump over)
+            # Check each direction (up, down, left, right)
+            
+            for dr, dc in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
+                ready_to_attack = False
+                for i in range(1, max(ROW_SIZE + 1, COL_SIZE + 1)):
+                    new_row, new_col = row + dr * i, col + dc * i
+                        
+                    # Stop if the cannon moved off the board
+                    if not (0 <= new_row < ROW_SIZE + 1 and 0 <= new_col < COL_SIZE + 1):
+                        break
+                    # Stop if the rook hits a piece
+                    piece, _ = self.piece_grid[new_row][new_col]
+
+                    if piece is not None:  # add this check
+                        can_move_coordinate.append((new_row, new_col))
+                        self.place_piece('dotMove', new_row, new_col)
+                    else: # find the next piece after it, check if cannon can attack
+                        ready_to_attack = True  
 
         else:
             raise ValueError(f"Unknown piece type: {piece_type}")
