@@ -15,9 +15,25 @@ MAKE_DECISION = 11
 MAKE_MOVE = 12
 
 class Player:
-    def __init__(self):
+    def __init__(self, initial_turn):
+        self.current_turn = initial_turn
         self.king_alive = True
         self.king_checkmate = False
+
+    def is_king_alive(self):
+        return self.king_alive
+    
+    def is_checkmate(self):
+        return self.king_checkmate
+    
+    def switch_turn(self):
+        if self.current_turn == 'red':
+            self.current_turn = 'black'
+        else:
+            self.current_turn = 'red'
+
+    def get_current_turn(self):
+        return self.current_turn
         
 class Piece:
     def __init__(self, screen_width, screen_height):
@@ -201,6 +217,18 @@ class Piece:
 
             self.selected_piece, _ = self.piece_grid[row][col]
             
+            if (self.selected_piece != None):
+                if (app.players.get_current_turn() == 'red' and self.selected_piece[0] != 'r' and self.status != MAKE_MOVE):
+                    print('no its black turn')
+                    return
+                elif(app.players.get_current_turn() == 'black' and self.selected_piece[0] != 'b' and self.status != MAKE_MOVE):
+                    print('no its red turn')
+                    return
+            
+            # If the king is checkmate, then only king can move or piece can protect the king
+            if (app.players.is_checkmate):
+                pass
+            
             if self.status == MAKE_DECISION:
                 print(f'Piece at {row},{col} selected')
 
@@ -372,7 +400,7 @@ class Piece:
                     can_move_coordinate.append((new_row, new_col))
                     self.place_piece('dotMove', new_row, new_col)
 
-        if piece_type in ['bCannon', 'rCannon']:
+        elif piece_type in ['bCannon', 'rCannon']:
             # Cannon can move any number of squares along the row or column but only attack through one piece (jump over)
             # Check each direction (up, down, left, right)
             
@@ -384,14 +412,93 @@ class Piece:
                     # Stop if the cannon moved off the board
                     if not (0 <= new_row < ROW_SIZE + 1 and 0 <= new_col < COL_SIZE + 1):
                         break
+
                     # Stop if the rook hits a piece
                     piece, _ = self.piece_grid[new_row][new_col]
 
-                    if piece is not None:  # add this check
-                        can_move_coordinate.append((new_row, new_col))
-                        self.place_piece('dotMove', new_row, new_col)
+                    if piece is None:  # add this check
+                        if not ready_to_attack:
+                            can_move_coordinate.append((new_row, new_col))
+                            self.place_piece('dotMove', new_row, new_col)
                     else: # find the next piece after it, check if cannon can attack
-                        ready_to_attack = True  
+                        if (ready_to_attack):
+                            if (piece[0] != piece_type[0]):
+                                can_move_coordinate.append((new_row, new_col))
+                                self.place_piece('dotMove', new_row, new_col)
+                                break
+                            else:
+                                break
+                        else:
+                            ready_to_attack = True  
+
+        elif piece_type in ['bKing', 'rKing']:
+            # King can only move 1 direction, through 1 squares and in its boundry
+            for dr, dc in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
+                new_row, new_col = row + dr, col + dc
+
+                boundaries = {
+                    "col": [3, 5],
+                    "row": {('black', 'red'): [(7, 9), (0, 2)]}
+                }
+
+                # Stop if the advisor moved off the board and cannot beyond its boundary
+                if not (0 <= new_row < ROW_SIZE + 1 and 0 <= new_col < COL_SIZE + 1):
+                    continue
+                     
+                black_boundary, red_boundary = boundaries["row"][('black', 'red')]
+
+                # Check boundaries for red advisor
+                if piece_type[0] == 'r':
+                    if not ( (red_boundary[0] <= new_row <= red_boundary[1]) and\
+                        (boundaries['col'][0] <= new_col <= boundaries['col'][1]) ):
+                        continue
+
+                # Check boundaries for black advisor
+                elif piece_type[0] == 'b':
+                    if not ( (black_boundary[0] <= new_row <= black_boundary[1]) and\
+                        (boundaries['col'][0] <= new_col <= boundaries['col'][1]) ):
+                        continue
+         
+                # If the destination square is empty or contains an enemy piece, the horse can move/attack there
+                piece, _ = self.piece_grid[new_row][new_col]
+
+                if piece is None or piece[0] != piece_type[0]:
+                    can_move_coordinate.append((new_row, new_col))
+                    self.place_piece('dotMove', new_row, new_col)
+
+        elif piece_type in ['bPawn', 'rPawn']:
+            # Pawn can only move 1 squares along the row if it hasnt been across the river yet
+            # After that, Pawn can move up or right and left, cannot move downward
+            has_across_theRiver = False
+            river_boundary = 4
+
+            direction = []
+
+            #  Check if has across the river
+            if (piece_type[0] == 'r' and row > river_boundary) or \
+                (piece_type[0] == 'b' and row <= river_boundary):
+                has_across_theRiver = True
+
+            if (has_across_theRiver and piece_type[0] == 'r'):
+                direction = [(1, 0), (0, -1), (0, 1)]
+            elif has_across_theRiver:
+                    direction = [(-1, 0), (0, -1), (0, 1)]
+            elif (piece_type[0] == 'r'): 
+                    direction = [(1, 0)]
+            else: direction = [(-1, 0)]
+
+            for dr, dc in direction:
+                new_row, new_col = row + dr, col + dc
+                # Stop if the pawn moved off the board
+                if not (0 <= new_row < ROW_SIZE + 1 and 0 <= new_col < COL_SIZE + 1):
+                    continue
+                
+                # If the destination square is empty or contains an enemy piece, the horse can move/attack there
+                piece, _ = self.piece_grid[new_row][new_col]
+
+                if piece is None or piece[0] != piece_type[0]:
+                    can_move_coordinate.append((new_row, new_col))
+                    self.place_piece('dotMove', new_row, new_col)
 
         else:
             raise ValueError(f"Unknown piece type: {piece_type}")
@@ -408,7 +515,15 @@ class Piece:
         self.remove_piece(old_coordinate)
 
         self.remove_dotMove(self.dotMove_coordinate)
-            
+        
+        # Need to checkmate
+        coordinate = self.can_move_to(selected_piece, row, col)
+        
+        if (coordinate in self.get_king_position()):
+            app.players.is_checkmate = True
+
+        app.players.switch_turn()
+
     def remove_dotMove(self, coordinate):   
 
         if coordinate is not None:
@@ -426,6 +541,18 @@ class Piece:
                 if image_id is not None:  # Make sure you don't try to delete a non-existing image
                     self.canvas.delete(image_id)
                     self.piece_grid[row][col] = (None, None)
+    
+    def get_king_position(self, current_turn):
+        if (current_turn == 'red'):
+            range_row = (0, 2)
+        else: range_row = (7, 9)
+
+        for i in range_row:
+            for j in range (3, 5):
+                if (self.piece_grid[i][j][0] == 'rKing' or self.piece_grid[i][j][0] == 'bKing'):
+                    return (i, j)
+                
+        return (0, 0)
 
 class App:
     def __init__(self, root):
@@ -439,6 +566,8 @@ class App:
 
         board.init_chess_man()
         board.init_piece()
+
+        self.players = Player('red')  # red go first
         
 root = tk.Tk()
 app = App(root)
